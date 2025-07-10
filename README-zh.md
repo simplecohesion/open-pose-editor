@@ -2,14 +2,6 @@
 # [点击此处进入编辑器](https://zhuyu1997.github.io/open-pose-editor/)
 # 预览
 https://user-images.githubusercontent.com/18410894/224073965-c782a05f-0a20-41cf-863d-8de490021ed7.mp4
-# 作为 WebUI 的一个扩展安装
-
-1. 打开Web UI的 "Extension" 选项卡
-2. 打开 "Available" 选项卡
-3. 如果您的Web UI版本过旧，请将 "Extension index URL" 更改为 `https://raw.githubusercontent.com/AUTOMATIC1111/stable-diffusion-webui-extensions/master/index.json`
-4. 点击 "Load from:" 按钮
-5. 点击3D Openpose Editor的 "Install" 按钮
-6. 打开 "Installed" 选项卡，点击 "Apply and restart UI" 按钮
 
 # 特点
 

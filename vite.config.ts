@@ -110,7 +110,6 @@ const pwa = VitePWA({
 
 // https://vitejs.dev/config/
 const config: UserConfigFn = ({ command, mode, ssrBuild }) => {
-    const IsExtension = mode.startsWith('extension')
     const common: UserConfig = {
         base: mode === 'online' ? '/open-pose-editor/' : './',
         define: {
@@ -127,57 +126,7 @@ const config: UserConfigFn = ({ command, mode, ssrBuild }) => {
             mode === 'online' ? pwa : null,
             visualizer(),
             ConditionalCompile(),
-            IsExtension ? splitVendorChunkPlugin() : null,
         ],
-    }
-
-    if (IsExtension) {
-        common.resolve = {
-            alias: [
-                {
-                    // Replace assets.ts for extension
-                    find: /.*\/assets(\.ts)?$/,
-                    replacement: resolve(
-                        __dirname,
-                        'src/environments/extension/assets.ts'
-                    ),
-                },
-            ],
-        }
-
-        switch (mode) {
-            case 'extension-editor':
-                {
-                    common.build = {
-                        ...common.build,
-                        assetsDir: '.',
-                        outDir: 'pages',
-                    }
-                }
-                break
-            case 'extension-entry':
-                {
-                    common.build = {
-                        ...common.build,
-                        outDir: 'javascript',
-                        assetsDir: '.',
-                        rollupOptions: {
-                            input: {
-                                index: resolve(
-                                    __dirname,
-                                    'src/environments/extension/entry.ts'
-                                ),
-                            },
-                            output: {
-                                entryFileNames: 'index.js',
-                                format: 'iife',
-                            },
-                        },
-                    }
-                    common.publicDir = false
-                }
-                break
-        }
     }
 
     return common

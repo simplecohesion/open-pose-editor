@@ -77,7 +77,7 @@ export default function useMessageDispatch(
             if (!data) return
 
             const { method, payload, type } = data as IPostMessage
-            // It is invalid message, not from webui extension.
+            // It is invalid message, not a valid call type.
             if (type != 'call') return
 
             console.log('method', method, payload)
