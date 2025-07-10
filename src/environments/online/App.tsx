@@ -1,194 +1,110 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { download } from '../../utils/transfer'
+import { useCallback, useRef, useState } from 'react'
+import { uploadImage } from '../../utils/transfer'
 import classes from './App.module.css'
-import Menu from '../../components/Menu'
-import PopupOver from '../../components/PopupOver'
 import { useBodyEditor } from '../../hooks'
-import {
-    LockClosedIcon,
-    LockOpen2Icon,
-    ResetIcon,
-    ResumeIcon,
-} from '@radix-ui/react-icons'
-import { getCurrentTime } from '../../utils/time'
-import useMessageDispatch from '../../hooks/useMessageDispatch'
+import { DetectPosefromImage } from '../../utils/detect'
+import { getImage } from '../../utils/image'
+import { GetLoading } from '../../components/Loading'
+import { ShowToast } from '../../components/Toast'
+import { Oops } from '../../components/Oops'
+import i18n, { IsChina } from '../../i18n'
+import { IsQQBrowser } from '../../utils/browser'
+import { SetCDNBase } from '../../utils/detect'
 
-const { app, threejsCanvas, gallery, background } = classes
-
-const PreviewCanvas = React.forwardRef<
-    HTMLCanvasElement,
-    {
-        isLock: boolean
-        enable: boolean
-        onChange: (isLock: boolean) => void
-        onRestore: () => void
-        onRun: () => void
-    }
->(({ isLock, enable, onChange, onRestore, onRun }, ref) => {
-    const Icon = isLock ? LockClosedIcon : LockOpen2Icon
-    return (
-        <div
-            style={{
-                position: 'relative',
-                display: enable ? 'flex' : 'none',
-                justifyContent: 'center',
-                backgroundColor: 'gray',
-            }}
-        >
-            <canvas
-                ref={ref}
-                style={{
-                    objectFit: 'contain',
-                    width: 'unset',
-                    // height:"unset",
-                    maxHeight: '100%',
-                    maxWidth: 300,
-                }}
-            ></canvas>
-            <ResumeIcon
-                style={{
-                    position: 'absolute',
-                    top: -10,
-                    right: 5,
-                    backgroundColor: 'white',
-                    borderRadius: 10,
-                    padding: 5,
-                }}
-                onClick={() => {
-                    onRun()
-                }}
-            ></ResumeIcon>
-            <Icon
-                style={{
-                    position: 'absolute',
-                    top: 20,
-                    right: 5,
-                    backgroundColor: 'white',
-                    borderRadius: 10,
-                    padding: 5,
-                }}
-                onClick={() => {
-                    onChange(!isLock)
-                }}
-            ></Icon>
-
-            <ResetIcon
-                style={{
-                    position: 'absolute',
-                    top: 50,
-                    right: 5,
-                    backgroundColor: !isLock ? 'gray' : 'white',
-                    borderRadius: 10,
-                    padding: 5,
-                }}
-                onClick={() => {
-                    if (isLock) onRestore()
-                }}
-            ></ResetIcon>
-        </div>
-    )
-})
+const { app, threejsCanvas } = classes
 
 function App() {
     const canvasRef = useRef(null)
     const previewCanvasRef = useRef(null)
-
     const backgroundRef = useRef<HTMLDivElement>(null)
     const editor = useBodyEditor(canvasRef, previewCanvasRef, backgroundRef)
-    const [imageData, setImageData] = useState<
-        Record<string, { title: string; src: string }>
-    >(() => ({
-        pose: {
-            title: '',
-            src: '',
-        },
-        depth: {
-            title: '',
-            src: '',
-        },
-        normal: {
-            title: '',
-            src: '',
-        },
-        canny: {
-            title: '',
-            src: '',
-        },
-    }))
+    const [isProcessing, setIsProcessing] = useState(false)
+    const [hasImage, setHasImage] = useState(false)
 
-    const onChangeBackground = useCallback((url: string) => {
-        const div = backgroundRef.current
-        if (div) {
-            div.style.backgroundImage = url ? `url(${url})` : 'none'
-        }
-    }, [])
-
-    const onScreenShot = useCallback(
-        (data: Record<string, { src: string; title: string }>) => {
-            setImageData(data)
-        },
-        []
-    )
-
-    const [preview, setPreivew] = useState(false)
-    const [lockView, setLockView] = useState(false)
-
-    useEffect(() => {
-        const preview = (enable: boolean) => {
-            setPreivew(enable)
+    const handleDetectFromImage = useCallback(async () => {
+        if (!editor) return
+        
+        if (IsQQBrowser()) {
+            Oops('QQ浏览器暂不支持图片检测，请使用其他浏览器试试')
+            return
         }
 
-        const lcokView = (value: boolean) => {
-            setLockView(value)
+        const body = await editor.GetBodyToSetPose()
+        if (!body) {
+            ShowToast({ title: i18n.t('Please select a skeleton!!') })
+            return
         }
-        editor?.PreviewEventManager.AddEventListener(preview)
-        editor?.LockViewEventManager.AddEventListener(lcokView)
 
-        return () => {
-            editor?.PreviewEventManager.RemoveEventListener(preview)
-            editor?.LockViewEventManager.RemoveEventListener(lcokView)
+        const loading = GetLoading(500)
+        setIsProcessing(true)
+
+        try {
+            const dataUrl = await uploadImage()
+            if (!dataUrl) {
+                setIsProcessing(false)
+                return
+            }
+
+            const image = await getImage(dataUrl)
+            
+            // Set background
+            const div = backgroundRef.current
+            if (div) {
+                div.style.backgroundImage = dataUrl ? `url(${dataUrl})` : 'none'
+                div.style.backgroundSize = 'contain'
+                div.style.backgroundPosition = 'center'
+                div.style.backgroundRepeat = 'no-repeat'
+            }
+
+            loading.show({ title: i18n.t('Downloading MediaPipe Pose Model') })
+            const result = await DetectPosefromImage(image)
+            loading.hide()
+
+            if (result) {
+                if (!result.poseWorldLandmarks)
+                    throw new Error(JSON.stringify(result))
+
+                const positions: [number, number, number][] =
+                    result.poseWorldLandmarks.map(({ x, y, z }) => [
+                        x * 100,
+                        -y * 100,
+                        -z * 100,
+                    ])
+
+                await editor.SetBlazePose(positions)
+                setHasImage(true)
+            }
+        } catch (error) {
+            loading.hide()
+            if (error === 'Timeout') {
+                if (IsChina())
+                    Oops(
+                        '下载超时，请点击"从图片中检测 [中国]"或者开启魔法，再试一次。' +
+                            '\n' +
+                            error
+                    )
+                else Oops(error)
+            } else
+                Oops(
+                    i18n.t(
+                        'If you try to detect anime characters, you may get an error. Please try again with photos.'
+                    ) +
+                        '\n' +
+                        error
+                )
+            console.error(error)
+        } finally {
+            setIsProcessing(false)
         }
     }, [editor])
 
-    useMessageDispatch({
-        GetAppVersion: () => __APP_VERSION__,
-        MakeImages: () => editor?.MakeImages(),
-        Pause: () => editor?.pause(),
-        Resume: () => editor?.resume(),
-        OutputWidth: (value: number) => {
-            if (editor && typeof value === 'number') {
-                editor.OutputWidth = value
-                return true
-            } else return false
-        },
-        OutputHeight: (value: number) => {
-            if (editor && typeof value === 'number') {
-                editor.OutputHeight = value
-                return true
-            } else return false
-        },
-        OnlyHand(value: boolean) {
-            if (editor && typeof value === 'boolean') {
-                editor.OnlyHand = value
-                return true
-            } else return false
-        },
-        MoveMode(value: boolean) {
-            if (editor && typeof value === 'boolean') {
-                editor.MoveMode = value
-                return true
-            } else return false
-        },
-        GetWidth: () => editor?.Width,
-        GetHeight: () => editor?.Height,
-        GetSceneData: () => editor?.GetSceneData(),
-        LockView: () => editor?.LockView(),
-        UnlockView: () => editor?.UnlockView(),
-        RestoreView: () => editor?.RestoreView(),
-    })
+    const handleDetectFromImageChina = useCallback(async () => {
+        SetCDNBase(false)
+        await handleDetectFromImage()
+    }, [handleDetectFromImage])
 
     return (
-        <div ref={backgroundRef} className={background}>
+        <div ref={backgroundRef} className={classes.background}>
             <canvas
                 className={threejsCanvas}
                 tabIndex={-1}
@@ -197,86 +113,111 @@ function App() {
                     e.preventDefault()
                 }}
             ></canvas>
-            <div className={gallery}>
-                <PreviewCanvas
-                    enable={preview}
-                    ref={previewCanvasRef}
-                    isLock={lockView}
-                    onChange={(isLock) => {
-                        if (isLock) {
-                            editor?.LockView()
-                        } else {
-                            editor?.UnlockView()
-                        }
-                    }}
-                    onRestore={() => {
-                        editor?.RestoreView()
-                    }}
-                    onRun={async () => {
-                        if (!editor) return
-                        const image = editor.MakeImages()
-                        const result = Object.fromEntries(
-                            Object.entries(image).map(([name, imgData]) => [
-                                name,
-                                {
-                                    src: imgData,
-                                    title: name + '_' + getCurrentTime(),
-                                },
-                            ])
-                        )
-                        onScreenShot(result)
-                    }}
-                ></PreviewCanvas>
-
-                {Object.entries(imageData).map(([name, { src, title }]) => (
-                    <img
-                        key={name}
-                        // avoid show error image
-                        {...(src ? { src } : {})}
-                        title={title}
-                        onClick={(e) => {
-                            const image = e.target as HTMLImageElement
-                            const title = image?.getAttribute('title') ?? ''
-                            const url = image?.getAttribute('src') ?? ''
-                            download(url, title)
-                        }}
-                    ></img>
-                ))}
-            </div>
-            <div
-                className={app}
-                style={{
-                    pointerEvents: 'none',
-                }}
-            >
+            <div className={app} style={{ pointerEvents: 'none' }}>
+                {/* Menu bar at the top */}
                 <div
                     style={{
-                        pointerEvents: 'initial',
-                        marginTop: 10,
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        padding: '10px',
                         display: 'flex',
                         justifyContent: 'center',
+                        alignItems: 'center',
+                        gap: '10px',
+                        pointerEvents: 'auto',
+                        zIndex: 1000,
                     }}
                 >
-                    {editor ? (
-                        <Menu
-                            editor={editor}
-                            onChangeBackground={onChangeBackground}
-                            onScreenShot={onScreenShot}
-                        />
-                    ) : undefined}
+                    <button
+                        onClick={handleDetectFromImage}
+                        disabled={isProcessing}
+                        style={{
+                            padding: '8px 16px',
+                            fontSize: '14px',
+                            backgroundColor: '#0084ff',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: isProcessing ? 'wait' : 'pointer',
+                            opacity: isProcessing ? 0.6 : 1,
+                            transition: 'all 0.3s',
+                        }}
+                        onMouseEnter={(e) => {
+                            if (!isProcessing) {
+                                e.currentTarget.style.backgroundColor = '#0066cc'
+                            }
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = '#0084ff'
+                        }}
+                    >
+                        {isProcessing ? i18n.t('Processing...') : i18n.t('Detect From Image')}
+                    </button>
+                    {IsChina() && (
+                        <button
+                            onClick={handleDetectFromImageChina}
+                            disabled={isProcessing}
+                            style={{
+                                padding: '8px 16px',
+                                fontSize: '14px',
+                                backgroundColor: '#666',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: isProcessing ? 'wait' : 'pointer',
+                                opacity: isProcessing ? 0.6 : 1,
+                                transition: 'all 0.3s',
+                            }}
+                            onMouseEnter={(e) => {
+                                if (!isProcessing) {
+                                    e.currentTarget.style.backgroundColor = '#555'
+                                }
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = '#666'
+                            }}
+                        >
+                            {isProcessing ? i18n.t('Processing...') : i18n.t('Detect From Image') + ' [中国]'}
+                        </button>
+                    )}
                 </div>
+
+                {/* Show welcome message only when no image is loaded */}
+                {!hasImage && (
+                    <div
+                        style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            height: '100vh',
+                            gap: '20px',
+                            pointerEvents: 'none',
+                        }}
+                    >
+                        <h1 style={{ color: 'white', textShadow: '2px 2px 4px rgba(0,0,0,0.5)' }}>
+                            {i18n.t('Pose Detection from Image')}
+                        </h1>
+                        <p style={{ 
+                            color: 'white', 
+                            textShadow: '1px 1px 2px rgba(0,0,0,0.5)',
+                            maxWidth: '600px',
+                            textAlign: 'center',
+                            lineHeight: '1.5'
+                        }}>
+                            {i18n.t('Upload an image to detect human pose and generate a 3D skeleton')}
+                        </p>
+                    </div>
+                )}
             </div>
-            {editor ? (
-                <PopupOver
-                    editor={editor}
-                    style={{
-                        pointerEvents: 'initial',
-                        position: 'fixed',
-                        top: 10,
-                        right: 10,
-                    }}
-                ></PopupOver>
-            ) : undefined}
+            {/* Hidden preview canvas - still needed for the editor */}
+            <canvas
+                ref={previewCanvasRef}
+                style={{ display: 'none' }}
+            ></canvas>
         </div>
     )
 }

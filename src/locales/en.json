@@ -1,4 +1,7 @@
 {
+    "Pose Detection from Image": "Pose Detection from Image",
+    "Processing...": "Processing...",
+    "Upload an image to detect human pose and generate a 3D skeleton": "Upload an image to detect human pose and generate a 3D skeleton",
     "Width": "Width",
     "Height": "Height",
     "Generate Skeleton/Depth/Normal/Canny Map": "Generate Skeleton/Depth/Normal/Canny Map",
