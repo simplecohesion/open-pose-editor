@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { uploadImage } from '../../utils/transfer'
 import classes from './App.module.css'
 import { useBodyEditor } from '../../hooks'
@@ -11,15 +11,36 @@ import i18n, { IsChina } from '../../i18n'
 import { IsQQBrowser } from '../../utils/browser'
 import { SetCDNBase } from '../../utils/detect'
 
-const { app, threejsCanvas } = classes
 
 function App() {
     const canvasRef = useRef(null)
     const previewCanvasRef = useRef(null)
     const backgroundRef = useRef<HTMLDivElement>(null)
+    const imageRef = useRef<HTMLImageElement>(null)
     const editor = useBodyEditor(canvasRef, previewCanvasRef, backgroundRef)
     const [isProcessing, setIsProcessing] = useState(false)
-    const [hasImage, setHasImage] = useState(false)
+    const [imageUrl, setImageUrl] = useState<string | null>(null)
+    
+    // Force canvas resize when container changes
+    useEffect(() => {
+        if (!editor || !backgroundRef.current) return
+        
+        // Force immediate resize on mount
+        setTimeout(() => {
+            editor.handleResize()
+        }, 0)
+        
+        const resizeObserver = new ResizeObserver(() => {
+            // Force the editor to update its size
+            editor.handleResize()
+        })
+        
+        resizeObserver.observe(backgroundRef.current)
+        
+        return () => {
+            resizeObserver.disconnect()
+        }
+    }, [editor])
 
     const handleDetectFromImage = useCallback(async () => {
         if (!editor) return
@@ -47,14 +68,8 @@ function App() {
 
             const image = await getImage(dataUrl)
             
-            // Set background
-            const div = backgroundRef.current
-            if (div) {
-                div.style.backgroundImage = dataUrl ? `url(${dataUrl})` : 'none'
-                div.style.backgroundSize = 'contain'
-                div.style.backgroundPosition = 'center'
-                div.style.backgroundRepeat = 'no-repeat'
-            }
+            // Set the image URL for display
+            setImageUrl(dataUrl)
 
             loading.show({ title: i18n.t('Downloading MediaPipe Pose Model') })
             const result = await DetectPosefromImage(image)
@@ -72,7 +87,6 @@ function App() {
                     ])
 
                 await editor.SetBlazePose(positions)
-                setHasImage(true)
             }
         } catch (error) {
             loading.hide()
@@ -104,31 +118,15 @@ function App() {
     }, [handleDetectFromImage])
 
     return (
-        <div ref={backgroundRef} className={classes.background}>
-            <canvas
-                className={threejsCanvas}
-                tabIndex={-1}
-                ref={canvasRef}
-                onContextMenu={(e) => {
-                    e.preventDefault()
-                }}
-            ></canvas>
-            <div className={app} style={{ pointerEvents: 'none' }}>
-                {/* Menu bar at the top */}
+        <div className={classes.container}>
+            {/* Menu bar at the top */}
+            <div className={classes.menuBar}>
                 <div
                     style={{
-                        position: 'fixed',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                        padding: '10px',
                         display: 'flex',
                         justifyContent: 'center',
                         alignItems: 'center',
                         gap: '10px',
-                        pointerEvents: 'auto',
-                        zIndex: 1000,
                     }}
                 >
                     <button
@@ -184,35 +182,40 @@ function App() {
                         </button>
                     )}
                 </div>
-
-                {/* Show welcome message only when no image is loaded */}
-                {!hasImage && (
-                    <div
-                        style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            height: '100vh',
-                            gap: '20px',
-                            pointerEvents: 'none',
-                        }}
-                    >
-                        <h1 style={{ color: 'white', textShadow: '2px 2px 4px rgba(0,0,0,0.5)' }}>
-                            {i18n.t('Pose Detection from Image')}
-                        </h1>
-                        <p style={{ 
-                            color: 'white', 
-                            textShadow: '1px 1px 2px rgba(0,0,0,0.5)',
-                            maxWidth: '600px',
-                            textAlign: 'center',
-                            lineHeight: '1.5'
-                        }}>
-                            {i18n.t('Upload an image to detect human pose and generate a 3D skeleton')}
-                        </p>
-                    </div>
-                )}
             </div>
+
+            {/* Split view container */}
+            <div className={classes.splitView}>
+                {/* Left side - Image view */}
+                <div className={classes.leftPanel}>
+                    {imageUrl ? (
+                        <img 
+                            ref={imageRef}
+                            src={imageUrl} 
+                            alt="Detected pose" 
+                            className={classes.detectedImage}
+                        />
+                    ) : (
+                        <div className={classes.placeholder}>
+                            <h2>{i18n.t('Pose Detection from Image')}</h2>
+                            <p>{i18n.t('Upload an image to detect human pose and generate a 3D skeleton')}</p>
+                        </div>
+                    )}
+                </div>
+
+                {/* Right side - 3D skeleton view */}
+                <div ref={backgroundRef} className={classes.rightPanel}>
+                    <canvas
+                        className={classes.threejsCanvas}
+                        tabIndex={-1}
+                        ref={canvasRef}
+                        onContextMenu={(e) => {
+                            e.preventDefault()
+                        }}
+                    ></canvas>
+                </div>
+            </div>
+
             {/* Hidden preview canvas - still needed for the editor */}
             <canvas
                 ref={previewCanvasRef}

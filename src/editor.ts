@@ -275,6 +275,12 @@ export class BodyEditor {
         document.body.appendChild(this.outputRenderer.domElement)
 
         this.renderer.setClearColor(this.clearColor, 0.0)
+        
+        // Set initial renderer size based on canvas dimensions
+        if (canvas.clientWidth && canvas.clientHeight) {
+            this.renderer.setSize(canvas.clientWidth, canvas.clientHeight, false)
+        }
+        
         this.scene = new THREE.Scene()
 
         this.gridHelper = new THREE.GridHelper(8000, 200)
@@ -282,7 +288,10 @@ export class BodyEditor {
         this.scene.add(this.gridHelper)
         this.scene.add(this.axesHelper)
 
-        const aspect = window.innerWidth / window.innerHeight
+        // Use canvas dimensions for initial aspect ratio instead of window dimensions
+        const canvasWidth = canvas.clientWidth || window.innerWidth
+        const canvasHeight = canvas.clientHeight || window.innerHeight
+        const aspect = canvasWidth / canvasHeight
 
         this.camera = new THREE.PerspectiveCamera(60, aspect, 0.1, 10000)
 

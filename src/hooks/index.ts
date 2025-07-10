@@ -30,29 +30,51 @@ export function useBodyEditor(
         if (!previewCanvas) return
         console.warn('create editor')
 
-        let editor: BodyEditor | null = new BodyEditor({
-            canvas,
-            previewCanvas,
-            parentElem: parent?.current ?? (document as any),
-            statsElem: import.meta.env.DEV ? document.body : undefined,
+        // Delay editor creation to ensure DOM layout is complete
+        const createEditor = () => {
+            const editor = new BodyEditor({
+                canvas,
+                previewCanvas,
+                parentElem: parent?.current ?? (document as any),
+                statsElem: import.meta.env.DEV ? document.body : undefined,
+            })
+            return editor
+        }
+        
+        let editor: BodyEditor | null = null
+        
+        // Use requestAnimationFrame to ensure layout is complete
+        requestAnimationFrame(() => {
+            editor = createEditor()
+            setEditor(editor)
         })
 
-        setEditor(editor)
-
         const init = async () => {
-            // StrictMode will render twice
-            // we have to check if the editor is null to avoid meaningless operations
-            if (editor) {
-                await LoadBodyData()
-                editor?.ResetScene()
-                if (editor?.RestoreScene && location.hash) {
-                    const rawData = decodeURIComponent(
-                        location.hash.replace(/^#/, '')
-                    )
-                    editor?.RestoreScene(rawData)
-                    location.hash = ''
+            // Wait for editor to be created
+            const waitForEditor = () => {
+                if (!editor) {
+                    setTimeout(waitForEditor, 10)
+                    return
                 }
+                
+                // StrictMode will render twice
+                // we have to check if the editor is null to avoid meaningless operations
+                LoadBodyData().then(() => {
+                    editor?.ResetScene()
+                    if (editor?.RestoreScene && location.hash) {
+                        const rawData = decodeURIComponent(
+                            location.hash.replace(/^#/, '')
+                        )
+                        editor?.RestoreScene(rawData)
+                        location.hash = ''
+                    }
+                    // Force initial resize after everything is loaded
+                    setTimeout(() => {
+                        editor?.handleResize()
+                    }, 100)
+                })
             }
+            waitForEditor()
         }
         init()
 
