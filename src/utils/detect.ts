@@ -1,71 +1,113 @@
-import { Class } from 'type-fest'
+import { PoseLandmarker, FilesetResolver, PoseLandmarkerResult } from '@mediapipe/tasks-vision'
 
-// https://github.com/google/mediapipe/blob/master/docs/solutions/pose.md#resources
-import type { Results, Pose, PoseConfig } from '@mediapipe/pose'
-import * as MediapipePose from '@mediapipe/pose'
-import assets from '../assets'
+let poseLandmarker: PoseLandmarker | null = null
+let isInitialized = false
 
-// @mediapipe/pose is not an es module ??
-// Extract Pose from the window to solve the problem
-// To prevent optimization, just print it
-console.log('@mediapipe/pose', MediapipePose)
-const MyPose = import.meta.env.DEV
-    ? MediapipePose.Pose
-    : ((window as any).Pose as Class<Pose, [PoseConfig]>)
-console.log('MyPose', MyPose)
+export async function initializePoseLandmarker() {
+    if (isInitialized) return
 
-const AliyuncsBase =
-    'https://openpose-editor.oss-cn-beijing.aliyuncs.com/%40mediapipe/pose'
-const JsdelivrBase = 'https://cdn.jsdelivr.net/npm/@mediapipe/pose'
+    const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+    )
 
-let UseJsdelivrBase = true
-function GetCDNBase() {
-    if (UseJsdelivrBase) return JsdelivrBase
-    else return AliyuncsBase
-}
-
-export function SetCDNBase(isJsdelivrBase: boolean) {
-    UseJsdelivrBase = isJsdelivrBase
-}
-
-const pose = new MyPose({
-    locateFile: (file) => {
-        if (file in assets) {
-            console.log('local', file)
-            return (assets as any)[file]
-        }
-        const url = `${GetCDNBase()}/${file}`
-
-        console.log('load pose model', url)
-        return url
-    },
-})
-
-// https://github.com/google/mediapipe/blob/master/docs/solutions/pose.md#solution-apis
-pose.setOptions({
-    modelComplexity: 1,
-    smoothLandmarks: true,
-    enableSegmentation: true,
-    smoothSegmentation: true,
-    minDetectionConfidence: 0.5,
-    minTrackingConfidence: 0.5,
-})
-
-export function DetectPosefromImage(image: HTMLImageElement): Promise<Results> {
-    return new Promise((resolve, reject) => {
-        let isException = false
-        const id = setTimeout(() => {
-            isException = true
-            reject('Timeout')
-        }, 60 * 1000)
-        pose.reset()
-        pose.send({ image: image })
-        pose.onResults((result) => {
-            console.log(result)
-            if (!isException) {
-                clearTimeout(id)
-                resolve(result)
-            }
-        })
+    poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+        baseOptions: {
+            modelAssetPath: "/open-pose-editor/models/pose_landmarker_heavy.task",
+            delegate: "GPU"
+        },
+        runningMode: "VIDEO",
+        numPoses: 1,
+        minPoseDetectionConfidence: 0.5,
+        minPosePresenceConfidence: 0.5,
+        minTrackingConfidence: 0.5,
+        outputSegmentationMasks: false
     })
+
+    isInitialized = true
+}
+
+export async function DetectPosefromImage(image: HTMLImageElement): Promise<PoseLandmarkerResult> {
+    if (!poseLandmarker) {
+        await initializePoseLandmarker()
+    }
+
+    // Switch to IMAGE mode for single image
+    await poseLandmarker!.setOptions({ runningMode: "IMAGE" })
+
+    const result = poseLandmarker!.detect(image)
+
+    // Switch back to VIDEO mode
+    await poseLandmarker!.setOptions({ runningMode: "VIDEO" })
+
+    return result
+}
+
+export function DetectPoseFromVideo(
+    video: HTMLVideoElement,
+    onFrame: (results: PoseLandmarkerResult) => void,
+    onComplete: () => void
+): { stop: () => void } {
+    let isRunning = true
+    let animationFrameId: number | null = null
+    let lastVideoTime = -1
+
+    const renderLoop = async () => {
+        if (!isRunning) {
+            return
+        }
+
+        // Check if video has ended
+        if (video.ended) {
+            onComplete()
+            return
+        }
+
+        // Only process if video time has changed and video is playing
+        if (video.currentTime !== lastVideoTime && !video.paused && video.currentTime > 0) {
+            if (!poseLandmarker) {
+                await initializePoseLandmarker()
+            }
+
+            try {
+                const results = poseLandmarker!.detectForVideo(video, performance.now())
+                onFrame(results)
+                lastVideoTime = video.currentTime
+            } catch (error) {
+                console.error('Error processing video frame:', error)
+            }
+        }
+
+        animationFrameId = requestAnimationFrame(renderLoop)
+    }
+
+    // Start the render loop
+    renderLoop()
+
+    return {
+        stop: () => {
+            isRunning = false
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId)
+                animationFrameId = null
+            }
+        }
+    }
+}
+
+// Convert PoseLandmarkerResult to the format expected by BodyEditor
+export function convertToWorldLandmarks(result: PoseLandmarkerResult): [number, number, number][] | null {
+    if (!result.worldLandmarks || result.worldLandmarks.length === 0) {
+        return null
+    }
+
+    // Get the first pose's world landmarks
+    const landmarks = result.worldLandmarks[0]
+
+    // Convert to the format expected by SetBlazePose
+    // MediaPipe uses meters, but we need to scale it up
+    return landmarks.map(landmark => [
+        landmark.x * 100,
+        -landmark.y * 100,  // Flip Y axis
+        -landmark.z * 100   // Flip Z axis
+    ])
 }

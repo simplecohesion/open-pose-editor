@@ -156,6 +156,43 @@ export async function uploadImage() {
     }
 }
 
+export async function uploadVideo() {
+    try {
+        const file = await fileOpenLegacy({
+            mimeTypes: ['video/*'],
+            extensions: ['.mp4', '.webm', '.ogg', '.mov', '.avi'],
+            legacySetup: (_, rejectionHandler) => {
+                const timeoutId = setTimeout(rejectionHandler, 10_000)
+                return (reject) => {
+                    clearTimeout(timeoutId)
+                    console.log('reject')
+                    if (reject) {
+                        reject('Open file timeout')
+                    }
+                }
+            },
+        })
+
+        return await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = function () {
+                resolve(reader.result as string)
+            }
+
+            reader.onerror = function () {
+                reject(reader.error)
+            }
+
+            if (Array.isArray(file) == false)
+                reader.readAsDataURL(file as FileWithHandle)
+            else reject("Don't select multiple files")
+        })
+    } catch (error) {
+        console.log(error)
+        return null
+    }
+}
+
 export async function CopyTextToClipboard(text: string) {
     try {
         await navigator.clipboard.writeText(text)

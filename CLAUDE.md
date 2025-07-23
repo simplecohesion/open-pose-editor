@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Pose Detection from Image is a simplified web application that detects human poses from uploaded images and generates 3D skeleton visualizations. The app uses MediaPipe for pose detection and Three.js for 3D rendering.
+Pose Detection from Video is a web application that detects human poses from uploaded videos and generates animated 3D skeleton visualizations. The app uses MediaPipe for pose detection and Three.js for 3D rendering.
 
 ## Development Commands
 
@@ -43,16 +43,17 @@ The codebase supports two main build modes:
 
 ### Core Architecture
 
-The application is simplified to focus on pose detection:
+The application focuses on video pose detection:
 - Uses `BodyEditor` class for 3D scene management
-- MediaPipe integration for pose detection from images
-- Three.js for rendering the detected skeleton
-- Minimal UI with just an upload button
+- MediaPipe integration for real-time pose detection from video frames
+- Three.js for rendering and animating the detected skeleton
+- Minimal UI with video upload and playback controls
 
 ### Key Components
 
-- `/src/environments/online/App.tsx` - Main app component with image upload and detection
-- `/src/utils/detect.ts` - MediaPipe pose detection integration
+- `/src/environments/online/App.tsx` - Main app component with video upload and detection
+- `/src/utils/detect.ts` - MediaPipe pose detection integration (supports both image and video)
+- `/src/utils/video.ts` - Video loading utilities
 - `/src/utils/BodyEditor.ts` - Three.js scene and skeleton management
 - `/src/body.ts` - Skeleton structure and manipulation
 
@@ -74,8 +75,9 @@ The application is simplified to focus on pose detection:
 ## Important Implementation Details
 
 - The app automatically creates a skeleton when loaded
-- Pose detection uses MediaPipe's Pose model
-- The uploaded image is displayed as a background
+- Pose detection uses MediaPipe's Pose model for real-time video processing
+- The uploaded video is displayed with playback controls
+- Real-time skeleton animation synced with video frames
 - Base path is `/open-pose-editor/` for production
 - TypeScript strict mode is enabled
 - No test suite currently exists

@@ -21,11 +21,11 @@ export function PWACheck() {
     if (import.meta.env.MODE !== 'online') return
     const updateSW = registerSW({
         onNeedRefresh() {
-            console.log('有更新，需要刷新！！')
+            console.log('Update available, please refresh!!')
             PWAPopup(updateSW)
         },
         onOfflineReady() {
-            console.log('已经入离线模式！！')
+            console.log('Offline mode is now enabled!!')
         },
     })
 }

@@ -4,7 +4,7 @@ import {
     uploadImage,
     uploadJson,
 } from '../../utils/transfer'
-import { DetectPosefromImage } from '../../utils/detect'
+import { DetectPosefromImage, initializePoseLandmarker, convertToWorldLandmarks } from '../../utils/detect'
 
 import { BodyControlor } from '../../body'
 
@@ -45,25 +45,15 @@ export class Helper {
             onChangeBackground(dataUrl)
 
             loading.show({ title: i18n.t('Downloading MediaPipe Pose Model') })
+            await initializePoseLandmarker()
             const result = await DetectPosefromImage(image)
             loading.hide()
 
             if (result) {
-                if (!result.poseWorldLandmarks)
-                    throw new Error(JSON.stringify(result))
-
-                const positions: [number, number, number][] =
-                    result.poseWorldLandmarks.map(({ x, y, z }) => [
-                        x * 100,
-                        -y * 100,
-                        -z * 100,
-                    ])
-
-                // this.drawPoseData(
-                //     result.poseWorldLandmarks.map(({ x, y, z }) =>
-                //         new THREE.Vector3().fromArray([x * 100, -y * 100, -z * 100])
-                //     )
-                // )
+                const positions = convertToWorldLandmarks(result)
+                if (!positions) {
+                    throw new Error('No pose landmarks detected')
+                }
 
                 await this.editor.SetBlazePose(positions)
                 return

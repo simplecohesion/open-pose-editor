@@ -1,52 +1,53 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { uploadImage } from '../../utils/transfer'
+import { uploadVideo } from '../../utils/transfer'
 import classes from './App.module.css'
 import { useBodyEditor } from '../../hooks'
-import { DetectPosefromImage } from '../../utils/detect'
-import { getImage } from '../../utils/image'
+import { DetectPoseFromVideo, initializePoseLandmarker, convertToWorldLandmarks } from '../../utils/detect'
+import { getVideo } from '../../utils/video'
 import { GetLoading } from '../../components/Loading'
 import { ShowToast } from '../../components/Toast'
 import { Oops } from '../../components/Oops'
-import i18n, { IsChina } from '../../i18n'
+import i18n from '../../i18n'
 import { IsQQBrowser } from '../../utils/browser'
-import { SetCDNBase } from '../../utils/detect'
 
 
 function App() {
     const canvasRef = useRef(null)
     const previewCanvasRef = useRef(null)
     const backgroundRef = useRef<HTMLDivElement>(null)
-    const imageRef = useRef<HTMLImageElement>(null)
     const editor = useBodyEditor(canvasRef, previewCanvasRef, backgroundRef)
     const [isProcessing, setIsProcessing] = useState(false)
-    const [imageUrl, setImageUrl] = useState<string | null>(null)
-    
+    const [videoUrl, setVideoUrl] = useState<string | null>(null)
+    const [isPlaying, setIsPlaying] = useState(false)
+    const videoRef = useRef<HTMLVideoElement | null>(null)
+    const detectProcessRef = useRef<{ stop: () => void } | null>(null)
+
     // Force canvas resize when container changes
     useEffect(() => {
         if (!editor || !backgroundRef.current) return
-        
+
         // Force immediate resize on mount
         setTimeout(() => {
             editor.handleResize()
         }, 0)
-        
+
         const resizeObserver = new ResizeObserver(() => {
             // Force the editor to update its size
             editor.handleResize()
         })
-        
+
         resizeObserver.observe(backgroundRef.current)
-        
+
         return () => {
             resizeObserver.disconnect()
         }
     }, [editor])
 
-    const handleDetectFromImage = useCallback(async () => {
+    const handleDetectFromVideo = useCallback(async () => {
         if (!editor) return
-        
+
         if (IsQQBrowser()) {
-            Oops('QQ浏览器暂不支持图片检测，请使用其他浏览器试试')
+            Oops('QQ浏览器暂不支持视频检测，请使用其他浏览器试试')
             return
         }
 
@@ -60,51 +61,59 @@ function App() {
         setIsProcessing(true)
 
         try {
-            const dataUrl = await uploadImage()
+            const dataUrl = await uploadVideo()
             if (!dataUrl) {
                 setIsProcessing(false)
                 return
             }
 
-            const image = await getImage(dataUrl)
-            
-            // Set the image URL for display
-            setImageUrl(dataUrl)
+            const video = await getVideo(dataUrl)
+
+            // Set the video URL for display
+            setVideoUrl(dataUrl)
+            videoRef.current = video
 
             loading.show({ title: i18n.t('Downloading MediaPipe Pose Model') })
-            const result = await DetectPosefromImage(image)
+
+            // Initialize pose landmarker if needed
+            await initializePoseLandmarker()
+
             loading.hide()
 
-            if (result) {
-                if (!result.poseWorldLandmarks)
-                    throw new Error(JSON.stringify(result))
-
-                const positions: [number, number, number][] =
-                    result.poseWorldLandmarks.map(({ x, y, z }) => [
-                        x * 100,
-                        -y * 100,
-                        -z * 100,
-                    ])
-
-                await editor.SetBlazePose(positions)
+            // Stop any existing detection process
+            if (detectProcessRef.current) {
+                detectProcessRef.current.stop()
             }
+
+            detectProcessRef.current = DetectPoseFromVideo(
+                video,
+                async (result) => {
+                    const positions = convertToWorldLandmarks(result)
+                    if (positions) {
+                        await editor.SetBlazePose(positions)
+                    }
+                },
+                () => {
+                    setIsPlaying(false)
+                    ShowToast({ title: i18n.t('Video processing completed') })
+                }
+            )
+
+            setIsPlaying(true)
+
+            // Start playing the video
+            video.play()
         } catch (error) {
             loading.hide()
             if (error === 'Timeout') {
-                if (IsChina())
-                    Oops(
-                        '下载超时，请点击"从图片中检测 [中国]"或者开启魔法，再试一次。' +
-                            '\n' +
-                            error
-                    )
-                else Oops(error)
+                Oops(error)
             } else
                 Oops(
                     i18n.t(
-                        'If you try to detect anime characters, you may get an error. Please try again with photos.'
+                        'If you try to detect anime characters, you may get an error. Please try again with real videos.'
                     ) +
-                        '\n' +
-                        error
+                    '\n' +
+                    error
                 )
             console.error(error)
         } finally {
@@ -112,10 +121,26 @@ function App() {
         }
     }, [editor])
 
-    const handleDetectFromImageChina = useCallback(async () => {
-        SetCDNBase(false)
-        await handleDetectFromImage()
-    }, [handleDetectFromImage])
+
+    const handleStopDetection = useCallback(() => {
+        if (detectProcessRef.current) {
+            detectProcessRef.current.stop()
+            detectProcessRef.current = null
+        }
+        if (videoRef.current) {
+            videoRef.current.pause()
+        }
+        setIsPlaying(false)
+    }, [])
+
+    // Cleanup on unmount
+    useEffect(() => {
+        return () => {
+            if (detectProcessRef.current) {
+                detectProcessRef.current.stop()
+            }
+        }
+    }, [])
 
     return (
         <div className={classes.container}>
@@ -130,8 +155,8 @@ function App() {
                     }}
                 >
                     <button
-                        onClick={handleDetectFromImage}
-                        disabled={isProcessing}
+                        onClick={handleDetectFromVideo}
+                        disabled={isProcessing || isPlaying}
                         style={{
                             padding: '8px 16px',
                             fontSize: '14px',
@@ -139,12 +164,12 @@ function App() {
                             color: 'white',
                             border: 'none',
                             borderRadius: '4px',
-                            cursor: isProcessing ? 'wait' : 'pointer',
-                            opacity: isProcessing ? 0.6 : 1,
+                            cursor: isProcessing || isPlaying ? 'wait' : 'pointer',
+                            opacity: isProcessing || isPlaying ? 0.6 : 1,
                             transition: 'all 0.3s',
                         }}
                         onMouseEnter={(e) => {
-                            if (!isProcessing) {
+                            if (!isProcessing && !isPlaying) {
                                 e.currentTarget.style.backgroundColor = '#0066cc'
                             }
                         }}
@@ -152,33 +177,30 @@ function App() {
                             e.currentTarget.style.backgroundColor = '#0084ff'
                         }}
                     >
-                        {isProcessing ? i18n.t('Processing...') : i18n.t('Detect From Image')}
+                        {isProcessing ? i18n.t('Processing...') : i18n.t('Detect From Video')}
                     </button>
-                    {IsChina() && (
+
+                    {isPlaying && (
                         <button
-                            onClick={handleDetectFromImageChina}
-                            disabled={isProcessing}
+                            onClick={handleStopDetection}
                             style={{
                                 padding: '8px 16px',
                                 fontSize: '14px',
-                                backgroundColor: '#666',
+                                backgroundColor: '#dc3545',
                                 color: 'white',
                                 border: 'none',
                                 borderRadius: '4px',
-                                cursor: isProcessing ? 'wait' : 'pointer',
-                                opacity: isProcessing ? 0.6 : 1,
+                                cursor: 'pointer',
                                 transition: 'all 0.3s',
                             }}
                             onMouseEnter={(e) => {
-                                if (!isProcessing) {
-                                    e.currentTarget.style.backgroundColor = '#555'
-                                }
+                                e.currentTarget.style.backgroundColor = '#c82333'
                             }}
                             onMouseLeave={(e) => {
-                                e.currentTarget.style.backgroundColor = '#666'
+                                e.currentTarget.style.backgroundColor = '#dc3545'
                             }}
                         >
-                            {isProcessing ? i18n.t('Processing...') : i18n.t('Detect From Image') + ' [中国]'}
+                            {i18n.t('Stop')}
                         </button>
                     )}
                 </div>
@@ -186,19 +208,32 @@ function App() {
 
             {/* Split view container */}
             <div className={classes.splitView}>
-                {/* Left side - Image view */}
+                {/* Left side - Video view */}
                 <div className={classes.leftPanel}>
-                    {imageUrl ? (
-                        <img 
-                            ref={imageRef}
-                            src={imageUrl} 
-                            alt="Detected pose" 
-                            className={classes.detectedImage}
+                    {videoUrl ? (
+                        <video
+                            src={videoUrl}
+                            controls
+                            autoPlay
+                            muted
+                            loop
+                            style={{
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'contain'
+                            }}
+                            onLoadedMetadata={(e) => {
+                                const video = e.currentTarget
+                                videoRef.current = video
+                                if (isPlaying) {
+                                    video.play()
+                                }
+                            }}
                         />
                     ) : (
                         <div className={classes.placeholder}>
-                            <h2>{i18n.t('Pose Detection from Image')}</h2>
-                            <p>{i18n.t('Upload an image to detect human pose and generate a 3D skeleton')}</p>
+                            <h2>{i18n.t('Pose Detection from Video')}</h2>
+                            <p>{i18n.t('Upload a video to detect human pose and generate animated 3D skeleton')}</p>
                         </div>
                     )}
                 </div>

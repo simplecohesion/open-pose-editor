@@ -43,7 +43,15 @@
     "Redo": "重做",
     "Undo": "撤销",
     "Detect From Image": "从图片中检测",
+    "Detect From Video": "从视频中检测",
     "Downloading MediaPipe Pose Model": "正在下载 MediaPipe 姿势模型",
+    "Pose Detection from Image": "从图片检测姿势",
+    "Pose Detection from Video": "从视频检测姿势",
+    "Processing...": "处理中...",
+    "Upload an image to detect human pose and generate a 3D skeleton": "上传图片以检测人体姿势并生成3D骨架",
+    "Upload a video to detect human pose and generate animated 3D skeleton": "上传视频以检测人体姿势并生成动画3D骨架",
+    "Video processing completed": "视频处理完成",
+    "Stop": "停止",
     "Edit": "编辑",
     "Setting": "设置",
     "Bone Thickness": "骨骼厚度",
@@ -67,5 +75,6 @@
     "Save Gesture": "保存手势",
     "Please select a hand!!": "请选择一只手！！",
     "If you try to detect anime characters, you may get an error. Please try again with photos.": "如果您尝试检测动漫角色，可能会出现错误。请使用照片再试一次。",
+    "If you try to detect anime characters, you may get an error. Please try again with real videos.": "如果您尝试检测动漫角色，可能会出现错误。请使用真实视频再试一次。",
     "Show Grid": "显示网格"
 }

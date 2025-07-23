@@ -15,6 +15,7 @@
   "dependencies": {
     "@ebay/nice-modal-react": "^1.2.9",
     "@mediapipe/pose": "^0.5.1675469404",
+    "@mediapipe/tasks-vision": "^0.10.22-rc.20250304",
     "@radix-ui/colors": "^0.1.8",
     "@radix-ui/react-alert-dialog": "^1.0.3",
     "@radix-ui/react-dialog": "^1.0.3",
